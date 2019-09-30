@@ -18,3 +18,15 @@ Case Insensitive gazetteer mostly contains name of location from ___subdistrict_
 and case sensitive gazetteer to keep the lookup for patient name (__title_CaseSensitive.lst__) and hospital name (__hospital_CaseSensitive__)
 
 __The details explanation of the function is already included in the each JAPE file__
+
+__Please use the html file provided in the new_new_medical_invoice to test the logic__
+
+__This works best on :__
+1. RS TELOGOREJO 1: 6 Datapoints (Address_Patient, Date_In, Date_Out, Doctor_Name, HospitalName, PatientName,)
+2. RS TELOGOREJO 3: 4 Datapoints (Date_In, Date_Out, Doctor_Name, HospitalName)
+3. RSIA CATHERINE BOOTH: 4 Datapoints (Date_In, Date_Out, Doctor_Name, HospitalName)
+4. RS PREMIER SURABAYA: 3 Datapoints (Date_In, Date_Out, HospitalName)
+5. RS PANTAI INDAH KAPUK: 3 Datapoints (Date_In, Date_Out, HospitalName)
+6. COLUMBIA ASIA 3: 3 Datapoints (Date_Out,Doctor_Name, HospitalName)
+7. COLUMBIA ASIA 1: 2 Datapoints (Date_Out, HospitalName)
+
