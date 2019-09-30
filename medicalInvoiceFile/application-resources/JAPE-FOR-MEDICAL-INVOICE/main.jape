@@ -1,0 +1,7 @@
+Multiphase: main
+Phases:
+date
+doctorName
+hospitalName
+patientName
+addressName

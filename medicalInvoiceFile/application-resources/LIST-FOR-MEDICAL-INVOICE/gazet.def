@@ -1,0 +1,12 @@
+address.lst:marker::
+city.lst:cityList::
+country.lst:countryList::
+docterTitle.lst:title::
+kecamatan.lst:kecamatanList::
+kelurahan.lst:kelurahanList::
+postcode.lst:postcodeList::
+month.lst:marker::
+nothospital.lst:notHospitalMarker::
+province.lst:provinsiList::
+titleIdentifier.lst:title::
+patient.lst:marker::

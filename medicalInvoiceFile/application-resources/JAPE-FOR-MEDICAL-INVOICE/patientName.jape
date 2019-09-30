@@ -1,0 +1,239 @@
+/*
+/Nama Pasien/
+/Nama Pasien:/
+/Nama <space>: /
+/Patient <space>:/
+/Sudah terima dari Tn/Ny/Sdr/Sdri/
+/Name
+Address
+Address
+Address/
+/Nama Polis:/
+*/
+
+Imports: {
+import static gate.Utils.*;
+import java.util.*;
+import gate.annotation.*;
+import java.util.Collections;
+}
+//====================================================================
+Phase: extractPatientName
+Input: Lookup Token Split
+Options: control = appelt
+
+Macro: GeneratePosition
+:temp{
+    try{
+        AnnotationSet as = (AnnotationSet) bindings.get("temp");
+        AnnotationSet PharmacyMarkerAS = inputAS.get("span", as.firstNode().getOffset(), as.lastNode().getOffset());
+        Iterator<Annotation> pharmacyItr = PharmacyMarkerAS.iterator();
+        int num = 0;
+        int total = 0;
+        int minl = 1000000, minb = 100000, minr = 1000000;
+        int maxl = 0, maxb = 0, maxr = 0;
+        int avg = 0;
+        Annotation annotation = as.iterator().next();
+
+        String text = stringFor(doc, annotation);
+
+        while(pharmacyItr.hasNext()){
+            Annotation pharmacy = pharmacyItr.next();
+            FeatureMap pharmacyFeatures = pharmacy.getFeatures();
+                String lValue = (String)pharmacyFeatures.get("l");
+                String bValue = (String)pharmacyFeatures.get("b");
+                String rValue = (String)pharmacyFeatures.get("r");
+
+                lValue = lValue.replaceAll("\\\\", "").replaceAll("\"", "");
+                bValue = bValue.replaceAll("\\\\", "").replaceAll("\"", "");
+                rValue = rValue.replaceAll("\\\\", "").replaceAll("\"", "");
+
+                try{
+                    int l = Integer.parseInt(lValue);
+                    if(minl > l){
+                        minl = l;
+                    }
+                    if(maxl < l){
+                        maxl = l;
+                    }
+                    int b = Integer.parseInt(bValue);
+                    if(minb > b){
+                        minb = b;
+                    }
+                    if(maxb < b){
+                        maxb = b;
+                    }
+                    int r = Integer.parseInt(rValue);
+                    if(minr > r){
+                        minr = r;
+                    }
+                    if(maxr < r){
+                        maxr = r;
+                    }
+                }
+                catch(Exception e){
+
+                }
+            }
+        FeatureMap annFeatures = annotation.getFeatures();
+        if(minb != 1000000 && maxb != 0){
+            annFeatures.put("maxL", maxl);
+            annFeatures.put("minL", minl);
+            annFeatures.put("maxB", maxb);
+            annFeatures.put("minB", minb);
+            annFeatures.put("maxR", maxr);
+            annFeatures.put("minR", minr);
+        }
+    }
+    catch(Exception e){
+        System.out.println("========================" + e);
+    }
+}
+
+Rule: r0
+(
+	(
+		{Lookup.minorType == nameMarker}
+		{Lookup.minorType == patientMarker}
+	):temp
+	({Token.category == ":"})[0,1]
+)
+-->
+:temp.patient_marker = {value=:temp@string}
+//=====================================================================
+Phase: extractPatientName2
+Input: Lookup Token Split
+Options: control = appelt
+Rule: r0
+(
+	({Lookup.minorType == nameMarker}):temp
+	({Token.category == ":"}|{Split})
+)
+-->
+:temp{
+	AnnotationSet nameAS = inputAS.get("patient_marker");
+	AnnotationSet tempAS = (AnnotationSet) bindings.get("temp");
+	List<Annotation> tempOrdered = inDocumentOrder(tempAS);
+	Annotation tempAnn = tempOrdered.get(0);
+	if(nameAS == null | nameAS.isEmpty()){
+		FeatureMap fm = Factory.newFeatureMap();
+		fm.put("value", tempAnn.getFeatures().get("matchedString"));
+		outputAS.add(tempAnn.getStartNode(), tempAnn.getEndNode(), "patient_marker", fm);	
+	}
+}
+//=====================================================================
+Phase: extractPatientNamePotential1
+Input: Lookup Token Split 
+Options: control = appelt
+//Nama Pasien 
+Rule: r0
+(
+	(
+		{Lookup.minorType == personTitle}
+		({Token.kind == word, Token.category == NNP, !Lookup.majorType== marker, Token.orth ==~ "upperInitial|allCaps"})[1,7]
+	):temp
+	{Split}
+)
+-->
+:temp.Patient_Name = {value=:temp@string}
+//=====================================================================
+Phase: extractPatientNamePotential2
+Input: Token patientMarker Split
+Options: control = appelt
+Rule: r0
+(
+	{patientMarker}
+	({Token.category == ":"})[0,1]
+	(({Token})[1,5]):temp
+	({Split})
+)
+-->
+:temp.Patient_Name = {value=:temp@string}
+//=====================================================================
+Phase: getPosition
+Input: Patient_Name patient_marker Sentence
+Options: control = appelt
+Rule: r0
+({Patient_Name} | {patient_marker} | {Sentence}):temp
+-->
+GeneratePosition
+//=====================================================================
+
+Phase: getName
+Input: page
+Options: control = Once
+Rule: r0
+({page}):temp
+-->
+{
+	AnnotationSet doctorsAS = inputAS.get("Patient_Name");
+	AnnotationSet tempAS = (AnnotationSet) bindings.get("temp");
+	List<Annotation> tempOrdered = inDocumentOrder(tempAS);
+	Annotation tempAnn = tempOrdered.get(0);
+	if(doctorsAS == null | doctorsAS.isEmpty()){
+		try{
+			AnnotationSet as = (AnnotationSet) bindings.get("temp");
+			AnnotationSet doctorMarkerAS = inputAS.get("patient_marker", as.firstNode().getOffset(), as.lastNode().getOffset());
+			AnnotationSet doctorNameAS = inputAS.get("Token", as.firstNode().getOffset(), as.lastNode().getOffset());
+			
+			List<Annotation> markerOrdered = inDocumentOrder(doctorMarkerAS);
+			List<Annotation> nameOrdered = inDocumentOrder(doctorNameAS);
+			Iterator<Annotation> markerIterator = markerOrdered.iterator();
+			Iterator<Annotation> nameIterator = nameOrdered.iterator();
+
+			List myList = new ArrayList();
+			while(markerIterator.hasNext()){
+				Annotation markerAnn = markerIterator.next();
+				FeatureMap markerFeatures = markerAnn.getFeatures();
+				int MarkerMaxBottom = (int)markerFeatures.get("maxB");
+
+				int minBValue = 999999;
+				int counter = 0, argmin = 0;
+				while(nameIterator.hasNext()){
+					Annotation nameAnn = nameIterator.next();
+					FeatureMap nameFeatures = nameAnn.getFeatures();
+					int nameMaxBottom = (int)nameFeatures.get("maxB");
+
+					int diff = Math.abs(nameMaxBottom - MarkerMaxBottom);
+					
+					if(diff < minBValue){
+						argmin = counter;
+						minBValue = diff;
+					}
+					counter += 1;
+				}
+				Annotation minBAnn = nameOrdered.get(argmin);
+				FeatureMap fm = Factory.newFeatureMap();
+				String value = (String)minBAnn.getFeatures().get("value");
+				fm.put("value", value);
+				outputAS.add(minBAnn.getStartNode(), minBAnn.getEndNode(), "Patient_Name", fm);
+			}
+		}
+		catch(Exception e){
+			System.out.println("================" + e);
+		}
+	}
+}
+
+Phase: RemoveDuplicate
+Input: Patient_Name
+Options: control = Once
+Rule:r0
+({Patient_Name}):temp
+-->
+:temp.PatientName = {value=:temp@string}
+
+
+Phase: Clean
+Input: patient_marker Patient_Name
+Options: control = all
+
+Rule: CleanTempAnnotations
+(
+	{patient_marker}|{Patient_Name}
+):temp
+-->
+{
+	gate.AnnotationSet temp = (gate.AnnotationSet) bindings.get("temp");
+	outputAS.removeAll(temp);
+}

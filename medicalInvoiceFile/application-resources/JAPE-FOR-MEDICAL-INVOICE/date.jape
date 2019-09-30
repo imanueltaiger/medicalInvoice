@@ -1,0 +1,356 @@
+Imports: {
+import static gate.Utils.*;
+import java.util.*;
+import gate.annotation.*;
+import java.util.Collections;
+}
+//=====================================================w===============
+Phase: datePotential
+Input: Token Lookup
+Options: control = appelt
+Macro: GeneratePosition
+:temp{
+    try{
+        AnnotationSet as = (AnnotationSet) bindings.get("temp");
+        AnnotationSet PharmacyMarkerAS = inputAS.get("span", as.firstNode().getOffset(), as.lastNode().getOffset());
+        Iterator<Annotation> pharmacyItr = PharmacyMarkerAS.iterator();
+        int num = 0;
+        int total = 0;
+        int minl = 1000000, minb = 100000, minr = 1000000;
+        int maxl = 0, maxb = 0, maxr = 0;
+        int avg = 0;
+        Annotation annotation = as.iterator().next();
+
+        String text = stringFor(doc, annotation);
+
+        while(pharmacyItr.hasNext()){
+            Annotation pharmacy = pharmacyItr.next();
+            FeatureMap pharmacyFeatures = pharmacy.getFeatures();
+                String lValue = (String)pharmacyFeatures.get("l");
+                String bValue = (String)pharmacyFeatures.get("b");
+                String rValue = (String)pharmacyFeatures.get("r");
+
+                lValue = lValue.replaceAll("\\\\", "").replaceAll("\"", "");
+                bValue = bValue.replaceAll("\\\\", "").replaceAll("\"", "");
+                rValue = rValue.replaceAll("\\\\", "").replaceAll("\"", "");
+
+                try{
+                    int l = Integer.parseInt(lValue);
+                    if(minl > l){
+                        minl = l;
+                    }
+                    if(maxl < l){
+                        maxl = l;
+                    }
+                    int b = Integer.parseInt(bValue);
+                    if(minb > b){
+                        minb = b;
+                    }
+                    if(maxb < b){
+                        maxb = b;
+                    }
+                    int r = Integer.parseInt(rValue);
+                    if(minr > r){
+                        minr = r;
+                    }
+                    if(maxr < r){
+                        maxr = r;
+                    }
+                }
+                catch(Exception e){
+
+                }
+            }
+        FeatureMap annFeatures = annotation.getFeatures();
+        if(minb != 1000000 && maxb != 0){
+            annFeatures.put("maxL", maxl);
+            annFeatures.put("minL", minl);
+            annFeatures.put("maxB", maxb);
+            annFeatures.put("minB", minb);
+            annFeatures.put("maxR", maxr);
+            annFeatures.put("minR", minr);
+        }
+    }
+    catch(Exception e){
+        System.out.println("========================" + e);
+    }
+}
+
+
+Rule: r0
+(
+	{Token.kind == number, Token.length == 2}
+	{Token.kind == punctuation}
+	{Lookup.minorType == "monthNumMarker"}
+	{Token.kind == punctuation}
+	{Token.kind == number, Token.length == 4}
+):temp
+-->
+:temp.ExtractedYear = {value=:temp@string}
+
+//=====================================================================
+Phase: getYearPosition
+Input: ExtractedYear
+Options: control = appelt
+Rule:r0
+({ExtractedYear}):temp
+-->
+GeneratePosition
+//=====================================================================
+Phase: getInDateMarker
+Input: Lookup Token
+Options: control = appelt
+
+Rule: r0
+(
+	{Lookup.minorType == tanggalMarker}
+	{Lookup.minorType == inDateMarker}
+):temp
+-->
+:temp.inDateMarker = {value=:temp@string}
+
+//=====================================================================
+Phase: getInDateMarker2
+Input: Sentence Lookup
+Options: control = appelt
+Rule: r0
+({Sentence contains {Lookup.minorType == inDateMarker}}):temp
+-->
+:temp{
+	AnnotationSet inDateAS = inputAS.get("inDateMarker");
+	AnnotationSet tempAS = (AnnotationSet) bindings.get("temp");
+	List<Annotation> tempOrdered = inDocumentOrder(tempAS);
+	Annotation tempAnn = tempOrdered.get(0);
+	if(inDateAS == null | inDateAS.isEmpty()){
+		FeatureMap fm = tempAnn.getFeatures();
+		outputAS.add(tempAnn.getStartNode(), tempAnn.getEndNode(), "inDateMarker", fm);	
+	}
+}
+//=====================================================================
+Phase:getInDatePosition
+Input: inDateMarker
+Options: control =appelt
+
+Rule: r0
+({inDateMarker}):temp
+-->
+GeneratePosition
+//=====================================================================
+Phase:getInDate
+Input: inDateMarker ExtractedYear Token
+Options: control = Once
+
+Rule: r0
+(
+	{inDateMarker}
+	({Token.kind == punctuation})[0,1]
+	({ExtractedYear}):temp
+)
+-->
+:temp.Date_In = {value=:temp@string}
+//=====================================================================
+Phase:getInDate2
+Input: page
+Options: control = Once
+
+Rule: r0
+({page}):temp
+-->
+{
+	AnnotationSet inDateAS = inputAS.get("Date_In");
+	AnnotationSet tempAS = (AnnotationSet) bindings.get("temp");
+	List<Annotation> tempOrdered = inDocumentOrder(tempAS);
+	Annotation tempAnn = tempOrdered.get(0);
+	if(inDateAS == null | inDateAS.isEmpty()){
+		try{
+			AnnotationSet as = (AnnotationSet) bindings.get("temp");
+			AnnotationSet outdateMarkerAS = inputAS.get("inDateMarker", as.firstNode().getOffset(), as.lastNode().getOffset());
+			AnnotationSet ExtractedYear = inputAS.get("ExtractedYear", as.firstNode().getOffset(), as.lastNode().getOffset());
+			
+			List<Annotation> outDateOrdered = inDocumentOrder(outdateMarkerAS);
+			List<Annotation> yearsOrdered = inDocumentOrder(ExtractedYear);
+			Iterator<Annotation> outDateIterator = outDateOrdered.iterator();
+			Iterator<Annotation> yearsIterator = yearsOrdered.iterator();
+
+			List myList = new ArrayList();
+			while(outDateIterator.hasNext()){
+				Annotation markerAnn = outDateIterator.next();
+				FeatureMap markerFeatures = markerAnn.getFeatures();
+				int MarkerMaxBottom = (int)markerFeatures.get("maxB");
+				int minBValue = 999999;
+				int counter = 0, argmin = 0;
+				while(yearsIterator.hasNext()){
+					Annotation yearsAnn = yearsIterator.next();
+					FeatureMap yearsFeatures = yearsAnn.getFeatures();
+					int yearMaxBottom = (int)yearsFeatures.get("maxB");
+
+					int diff = Math.abs(yearMaxBottom - MarkerMaxBottom);
+					
+					if(diff < minBValue){
+						argmin = counter;
+						minBValue = diff;
+					}
+					counter += 1;
+				}
+				Annotation minBAnn = yearsOrdered.get(argmin);
+				FeatureMap fm = Factory.newFeatureMap();
+				String value = (String)minBAnn.getFeatures().get("value");
+				fm.put("value", value);
+				outputAS.add(minBAnn.getStartNode(), minBAnn.getEndNode(), "Date_In", fm);
+			}
+		}
+		catch(Exception e){
+			System.out.println("================" + e);
+		}
+	}
+}
+//=====================================================================
+Phase: getOutDateMarker
+Input: Lookup
+Options: control = appelt
+
+/*********************************************
+Extracting the marker of date outcharge:
+ex: 
+(((Tanggal))) (((Keluar)))
+(((Tanggal))) (((Pulang)))
+*********************************************/
+Rule: r0
+(
+	{Lookup.minorType == tanggalMarker}
+	{Lookup.minorType == outDateMarker}
+):temp
+-->
+:temp.outDateMarker = {value=:temp@string}
+//=====================================================================
+Phase: getOutDateMarker2
+Input: Sentence Lookup
+Options: control = appelt
+
+/*********************************************
+Fallback method of Extracting the marker of date outcharge. Get the sentence that contains keyword of date outchars
+ex: 
+Tanggal/Waktu (((Pulang)))
+Jam (((Pulang)))
+*********************************************/
+Rule: r0
+({Sentence contains {Lookup.minorType == outDateMarker}}):temp
+-->
+:temp{
+	AnnotationSet outDateAS = inputAS.get("outDateMarker");
+	AnnotationSet tempAS = (AnnotationSet) bindings.get("temp");
+	List<Annotation> tempOrdered = inDocumentOrder(tempAS);
+	Annotation tempAnn = tempOrdered.get(0);
+	if(outDateAS == null | outDateAS.isEmpty()){
+		FeatureMap fm = tempAnn.getFeatures();
+		outputAS.add(tempAnn.getStartNode(), tempAnn.getEndNode(), "outDateMarker", fm);	
+	}
+}
+//=====================================================================
+Phase:getOutDatePosition
+Input: outDateMarker
+Options: control =appelt
+
+Rule: r0
+({outDateMarker}):temp
+-->
+GeneratePosition
+//=====================================================================
+Phase:getOutDate
+Input: outDateMarker ExtractedYear Token
+Options: control = Once
+
+/*********************************************
+Extracting the exact pattern of date outcharge:
+ex: 
+Tanggal Keluar: 17/08/2019 
+*********************************************/
+Rule: r0
+(
+	{outDateMarker}
+	({Token.kind == punctuation})[0,1]
+	({ExtractedYear}):temp
+)
+-->
+:temp.Date_Out = {value=:temp@string}
+//=====================================================================
+
+Phase:getOutDate
+Input: page
+Options: control = Once
+
+/*********************************************
+Fallback method from previous phase, find the year that appears next to the outcharges date marker
+ex: 
+Tanggal Pulang: 17/08/2019 
+*********************************************/
+Rule: r0
+({page}):temp
+-->
+{
+	AnnotationSet outDateAS = inputAS.get("Date_Out");
+	AnnotationSet tempAS = (AnnotationSet) bindings.get("temp");
+	List<Annotation> tempOrdered = inDocumentOrder(tempAS);
+	Annotation tempAnn = tempOrdered.get(0);
+	if(outDateAS == null | outDateAS.isEmpty()){
+		try{
+			AnnotationSet as = (AnnotationSet) bindings.get("temp");
+			AnnotationSet outdateMarkerAS = inputAS.get("outDateMarker", as.firstNode().getOffset(), as.lastNode().getOffset());
+			AnnotationSet ExtractedYear = inputAS.get("ExtractedYear", as.firstNode().getOffset(), as.lastNode().getOffset());
+			
+			List<Annotation> outDateOrdered = inDocumentOrder(outdateMarkerAS);
+			List<Annotation> yearsOrdered = inDocumentOrder(ExtractedYear);
+			Iterator<Annotation> outDateIterator = outDateOrdered.iterator();
+			Iterator<Annotation> yearsIterator = yearsOrdered.iterator();
+
+			List myList = new ArrayList();
+			while(outDateIterator.hasNext()){
+				Annotation markerAnn = outDateIterator.next();
+				FeatureMap markerFeatures = markerAnn.getFeatures();
+				int MarkerMaxBottom = (int)markerFeatures.get("maxB");
+
+				int minBValue = 999999;
+				int counter = 0, argmin = 0;
+				while(yearsIterator.hasNext()){
+					Annotation yearsAnn = yearsIterator.next();
+					FeatureMap yearsFeatures = yearsAnn.getFeatures();
+					int yearMaxBottom = (int)yearsFeatures.get("maxB");
+
+					int diff = Math.abs(yearMaxBottom - MarkerMaxBottom);
+					
+					if(diff < minBValue){
+						argmin = counter;
+						minBValue = diff;
+					}
+					counter += 1;
+				}
+				Annotation minBAnn = yearsOrdered.get(argmin);
+				FeatureMap fm = Factory.newFeatureMap();
+				String value = (String)minBAnn.getFeatures().get("value");
+				fm.put("value", value);
+				outputAS.add(minBAnn.getStartNode(), minBAnn.getEndNode(), "Date_Out", fm);
+			}
+		}
+		catch(Exception e){
+			System.out.println("================" + e);
+		}
+	}
+}
+
+
+Phase: Clean
+Input: ExtractedYear inDateMarker outDateMarker
+Options: control = all
+
+/*********************************************
+Cleaning the unnecessaryMarker
+*********************************************/
+Rule: CleanTempAnnotations
+(
+	{ExtractedYear}|{inDateMarker}|{outDateMarker}
+):temp
+-->
+{
+	gate.AnnotationSet temp = (gate.AnnotationSet) bindings.get("temp");
+	outputAS.removeAll(temp);
+}

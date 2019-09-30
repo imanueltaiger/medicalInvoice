@@ -1,0 +1,39 @@
+nama: minorType=nameMarker
+
+dokter:minorType=doctorMarker
+doctor:minorType=doctorMarker
+Dr: minorType=doctorMarker
+
+
+grand total:minorType=totalMarker
+charge:minorType=chargeMarker
+
+Admission Date:minorType=admissionMarker
+ADMDATE&TIME:minorType=admissionMarker
+BILL DATE:minorType=admissionMarker
+
+address:minorType=addressMarker
+alamat:minorType=addressMarker
+
+
+kelas:minorType=kelasMarker
+
+Tanggal: minorType = tanggalMarker
+Tgl: minorType = tanggalMarker
+
+masuk: minorType = inDateMarker
+periksa: minorType = inDateMarker
+
+keluar: minorType = outDateMarker
+pulang: minorType = outDateMarker
+selesai: minorType = outDateMarker
+
+tagihan: minorType = notDateMarker
+trans: minorType = notDateMarker
+invoice: minorType = notDateMarker
+
+description: minorType=treatmentMarker
+keterangan: minorType=treatmentMarker
+details: minorType=treatmentMarker
+service: minorType=treatmentMarker
+deskripsi: minorType=treatmentMarker

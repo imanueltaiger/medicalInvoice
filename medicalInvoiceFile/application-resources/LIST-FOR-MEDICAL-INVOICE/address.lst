@@ -1,0 +1,27 @@
+
+no: minorType=addressNumberMarker
+nomor: minorType=addressNumberMarker
+n0: minorType=addressNumberMarker
+
+blok: minorType=addressBlockMarker
+
+jl: minorType=streetMarker
+jln: minorType=streetMarker
+jalan: minorType=streetMarker
+
+RT: minorType=RTRWMarker
+RW: minorType=RTRWMarker
+
+Kota: minorType=cityMarker
+kab: minorType=cityMarker
+Kabupaten: minorType=cityMarker
+kotamadya: minorType=cityMarker
+
+kelurahan: minorType=kelurahanMarker
+Kel: minorType=kelurahanMarker
+desa: minorType=kelurahanMarker
+
+kecamatan: minorType=kecamatanMarker
+Kec: minorType=kecamatanMarker
+
+blok: minorType=blokMarker

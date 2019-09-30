@@ -1,0 +1,248 @@
+Imports: {
+import static gate.Utils.*;
+import java.util.*;
+import gate.annotation.*;
+import java.util.Collections;
+}
+//=====================================================w===============
+//get the marks of hospital name: 'Rumah Sakit' / 'RS' / 'Hospital'
+Phase: getRumahSakitMarker
+Input: Lookup Split
+Options: control = appelt
+
+Macro: GeneratePosition
+:temp{
+    try{
+        AnnotationSet as = (AnnotationSet) bindings.get("temp");
+        AnnotationSet PharmacyMarkerAS = inputAS.get("span", as.firstNode().getOffset(), as.lastNode().getOffset());
+        Iterator<Annotation> pharmacyItr = PharmacyMarkerAS.iterator();
+        int num = 0;
+        int total = 0;
+        int minl = 1000000, minb = 100000, minr = 1000000;
+        int maxl = 0, maxb = 0, maxr = 0;
+        int avg = 0;
+        Annotation annotation = as.iterator().next();
+
+        String text = stringFor(doc, annotation);
+
+        while(pharmacyItr.hasNext()){
+            Annotation pharmacy = pharmacyItr.next();
+            FeatureMap pharmacyFeatures = pharmacy.getFeatures();
+                String lValue = (String)pharmacyFeatures.get("l");
+                String bValue = (String)pharmacyFeatures.get("b");
+                String rValue = (String)pharmacyFeatures.get("r");
+
+                lValue = lValue.replaceAll("\\\\", "").replaceAll("\"", "");
+                bValue = bValue.replaceAll("\\\\", "").replaceAll("\"", "");
+                rValue = rValue.replaceAll("\\\\", "").replaceAll("\"", "");
+
+                try{
+                    int l = Integer.parseInt(lValue);
+                    if(minl > l){
+                        minl = l;
+                    }
+                    if(maxl < l){
+                        maxl = l;
+                    }
+                    int b = Integer.parseInt(bValue);
+                    if(minb > b){
+                        minb = b;
+                    }
+                    if(maxb < b){
+                        maxb = b;
+                    }
+                    int r = Integer.parseInt(rValue);
+                    if(minr > r){
+                        minr = r;
+                    }
+                    if(maxr < r){
+                        maxr = r;
+                    }
+                }
+                catch(Exception e){
+
+                }
+            }
+        FeatureMap annFeatures = annotation.getFeatures();
+        if(minb != 1000000 && maxb != 0){
+            annFeatures.put("maxL", maxl);
+            annFeatures.put("minL", minl);
+            annFeatures.put("maxB", maxb);
+            annFeatures.put("minB", minb);
+            annFeatures.put("maxR", maxr);
+            annFeatures.put("minR", minr);
+        }
+    }
+    catch(Exception e){
+        System.out.println("========================" + e);
+    }
+}
+
+Rule:r0
+(
+	({Split, !Lookup.majorType == "notHospitalMarker"})[0,1]
+	({Lookup.minorType == hospitalPrefixMarker}):temp
+)
+-->
+:temp.RSMarker = {string=:temp@string}
+//=====================================================================
+Phase: getHospitalName
+Input: Sentence RSMarker Split Lookup
+Options: control = Once
+
+/*********************************************
+Get the sentence that contains RSMarker on it
+ex: 
+(((Rumah Sakit Columbia Asia)))
+*********************************************/
+Rule:r0
+(
+	({Split, !Lookup.majorType == "notHospitalMarker"})[0,1]
+	(
+		{Sentence contains {RSMarker}}
+	):temp
+)
+-->
+:temp.HospitalName = {value = :temp@string}
+
+Phase: Clean
+Input: RSMarker
+Options: control = all
+
+/*********************************************
+Cleaning the unnecessaryMarker
+*********************************************/
+Rule: CleanTempAnnotations
+(
+	{RSMarker}
+):temp
+-->
+{
+	gate.AnnotationSet temp = (gate.AnnotationSet) bindings.get("temp");
+	outputAS.removeAll(temp);
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+// //====================================================================
+// //get the phrase of false positive: 'Biaya Rumah Sakit' (hospital cost)
+// Phase:notHospitalName
+// Input:preSufMarker Token Lookup Split
+// Options: control = appelt
+
+// Rule:r1
+// (
+// 	(
+// 		//get phrase like '(Total) Biaya Rumah Sakit'
+// 		({Token})?
+// 		{Lookup.majorType == "notHospitalMarker"}
+// 		{preSufMarker}
+// 	)
+// 	|
+// 	(
+// 		//get phrase like 'Hospital Charges'
+// 		{preSufMarker}
+// 		{Lookup.majorType == "notHospitalMarker"}
+// 	)
+// ):temp
+// -->
+// :temp.notHospitalName = {string=:temp@string}
+// //====================================================================
+// //Extract all possible name marked by preSufMarker
+// Phase:hospitalName
+// Input: preSufMarker Token Split
+// Options:control = appelt
+
+// Rule:r2
+// (
+// 	(
+// 		//get phrase like 'Rumah Sakit Columbia Asia'
+// 		{preSufMarker}
+// 		({Token.kind == "word", Token.orth==~ "upperInitial|allCaps", !Split})[1,4]
+// 	):temp
+// 	({Split})?
+// )
+// -->
+// :temp.hospitalName = {string=:temp@string}
+// //====================================================================
+// Phase:hospitalName
+// Input: preSufMarker Token Split
+// Options:control = appelt
+
+// Rule:r3
+
+// (
+// 	(
+// 		//get phrase like 'Columbia Asia Hospital'
+// 		({Token.kind == "word", Token.orth==~ "upperInitial|allCaps",!Split})[1,4]
+// 		{preSufMarker}
+// 	):temp
+// 	({Split})?
+// )
+// -->
+// :temp.hospitalName = {string=:temp@string}
+// //====================================================================
+// Phase:hospitalName
+// Input: preSufMarker Sentence Split
+// Options:control = appelt
+
+// Rule:r4
+// //get phrase like 'Rumah Sakit Columbia Asia'
+// (
+// 	{preSufMarker}
+// 	{Sentence}
+// ):temp
+// -->
+// :temp.hospitalName = {string=:temp@string, rule = "r2"}
+
+// //====================================================================
+// //Negated the false positive hospital name
+// Phase:removingHospitalName
+// Input: hospitalName notHospitalName
+// Options:control = Once
+
+// Rule:r5
+// (
+// 	{hospitalName 
+// 		notWithin 
+// 		{notHospitalName}
+// 	}
+// ):temp
+// -->
+// :temp.HospitalNameCleaned = {string=:temp@string}
+
+
+// Phase: Clean
+// Input: hospitalName notHospitalName preSufMarker
+// Options: control = all
+

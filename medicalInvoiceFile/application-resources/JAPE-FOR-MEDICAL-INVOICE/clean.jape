@@ -1,0 +1,13 @@
+Phase: Clean
+Input: Split Token Lookup Sentence page body span p SpaceToken
+Options: control = all
+
+Rule: CleanTempAnnotations
+(
+	{Split}|{Token}|{Lookup}|{Sentence}|{SpaceToken}|{page}|{body}|{span}|{p}
+):temp
+-->
+{
+	gate.AnnotationSet temp = (gate.AnnotationSet) bindings.get("temp");
+	outputAS.removeAll(temp);
+}

@@ -1,0 +1,278 @@
+Imports: {
+import static gate.Utils.*;
+import java.util.*;
+import gate.annotation.*;
+import java.util.Collections;
+}
+//=====================================================================
+Phase: extractAddressMarker
+Input: Lookup Token Split
+Options: control = appelt
+
+Macro: GeneratePosition
+:temp{
+    try{
+        AnnotationSet as = (AnnotationSet) bindings.get("temp");
+        AnnotationSet PharmacyMarkerAS = inputAS.get("span", as.firstNode().getOffset(), as.lastNode().getOffset());
+        Iterator<Annotation> pharmacyItr = PharmacyMarkerAS.iterator();
+        int num = 0;
+        int total = 0;
+        int minl = 1000000, minb = 100000, minr = 1000000;
+        int maxl = 0, maxb = 0, maxr = 0;
+        int avg = 0;
+        Annotation annotation = as.iterator().next();
+
+        String text = stringFor(doc, annotation);
+
+        while(pharmacyItr.hasNext()){
+            Annotation pharmacy = pharmacyItr.next();
+            FeatureMap pharmacyFeatures = pharmacy.getFeatures();
+                String lValue = (String)pharmacyFeatures.get("l");
+                String bValue = (String)pharmacyFeatures.get("b");
+                String rValue = (String)pharmacyFeatures.get("r");
+
+                lValue = lValue.replaceAll("\\\\", "").replaceAll("\"", "");
+                bValue = bValue.replaceAll("\\\\", "").replaceAll("\"", "");
+                rValue = rValue.replaceAll("\\\\", "").replaceAll("\"", "");
+
+                try{
+                    int l = Integer.parseInt(lValue);
+                    if(minl > l){
+                        minl = l;
+                    }
+                    if(maxl < l){
+                        maxl = l;
+                    }
+                    int b = Integer.parseInt(bValue);
+                    if(minb > b){
+                        minb = b;
+                    }
+                    if(maxb < b){
+                        maxb = b;
+                    }
+                    int r = Integer.parseInt(rValue);
+                    if(minr > r){
+                        minr = r;
+                    }
+                    if(maxr < r){
+                        maxr = r;
+                    }
+                }
+                catch(Exception e){
+
+                }
+            }
+        FeatureMap annFeatures = annotation.getFeatures();
+        if(minb != 1000000 && maxb != 0){
+            annFeatures.put("maxL", maxl);
+            annFeatures.put("minL", minl);
+            annFeatures.put("maxB", maxb);
+            annFeatures.put("minB", minb);
+            annFeatures.put("maxR", maxr);
+            annFeatures.put("minR", minr);
+        }
+    }
+    catch(Exception e){
+        System.out.println("========================" + e);
+    }
+}
+
+/*********************************************
+Extracting the marker of Address of patient using markers:
+ex: 
+(((alamat))) (((pasien)))
+*********************************************/
+Rule: r0
+(
+	(
+		{Lookup.minorType == addressMarker}
+		{Lookup.minorType == patientMarker}
+	):temp
+	({Token.category == ":"})[0,1]
+)
+-->
+:temp.address_marker = {value=:temp@string}
+//=====================================================================
+Phase: extractAddressMarker
+Input: Lookup Token Split
+Options: control = appelt
+
+/*********************************************
+Creating the fallback method of rule r0
+ex: 
+(((alamat))) ((:))
+*********************************************/
+
+Rule: r0
+(
+	({Lookup.minorType == addressMarker}):temp
+	({Token.category == ":"}|{Split})
+)
+-->
+:temp{
+	AnnotationSet nameAS = inputAS.get("address_marker");
+	AnnotationSet tempAS = (AnnotationSet) bindings.get("temp");
+	List<Annotation> tempOrdered = inDocumentOrder(tempAS);
+	Annotation tempAnn = tempOrdered.get(0);
+	if(nameAS == null | nameAS.isEmpty()){
+		FeatureMap fm = Factory.newFeatureMap();
+		outputAS.add(tempAnn.getStartNode(), tempAnn.getEndNode(), "address_marker", fm);	
+	}
+}
+//=====================================================================
+Phase: convertSentenceToKalimat
+Input: Sentence Split
+Options: control = appelt
+
+/*********************************************
+Concatenate sentences that wrongly splitted by GATE
+ex: 
+(((Dr.))) (((Titin Eko Nugraheni)))
+*********************************************/
+Rule: r0
+(
+	({Sentence})[1,4]
+):temp
+-->
+:temp.Kalimat = {value = :temp@string}
+//=====================================================================
+
+Phase: getAddressPotential
+Input: Kalimat Lookup
+Options: control = appelt
+
+/*********************************************
+Get potentially address by using "kalimat" that contains one of "location" lookup
+ex: 
+(((Jl.' Listrik No. 2 A Medan 20112)))
+*********************************************/
+Rule: r0
+(
+    {Kalimat contains {Lookup.majorType == countryList}} 
+    | {Kalimat contains {Lookup.majorType == cityList}} 
+    | {Kalimat contains {Lookup.majorType == kelurahanList}} 
+    | {Kalimat contains {Lookup.majorType == kecamatanList}}
+    | {Kalimat contains {RTRWPotential}}  
+):temp
+-->
+:temp.address_potential = {value = :temp@string}
+//=====================================================================
+Phase: cleaningAddressPotential
+Input: address_potential Lookup
+Options: control = appelt
+
+/*********************************************
+Removing Address_potential that consist of "patient" or "dokter" token
+ex: 
+(((Dokter Utama))) --> in location gazeeters, there's area that named "Utama", so it's wrongly classified as address potential
+*********************************************/
+Rule: r0
+(
+    {address_potential contains {Lookup.minorType == patientMarker}}
+    |
+    {address_potential contains {Lookup.minorType == doctorMarker}}
+):temp
+-->
+:temp.notAddress = {value = :temp@string}
+//=====================================================================
+Phase: cleaningAddressPotential
+Input: address_potential notAddress
+Options: control = appelt
+
+/*********************************************
+Removing Address_potential that within notAddress
+*********************************************/
+Rule: r0
+(
+    {address_potential notWithin {notAddress}}
+):temp
+-->
+:temp.addressPotentialCleaned = {value = :temp@string}
+//=====================================================================
+
+
+Phase: getPosition
+Input: addressPotentialCleaned address_marker
+Options: control = appelt
+
+Rule: r0
+({address_marker} | {addressPotentialCleaned}):temp
+-->
+GeneratePosition
+//=====================================================================
+Phase: getAddress
+Input: page
+Options: control = Once
+
+/*********************************************
+From the page retrieved, get the address marker. If there's addresspotential that located nearby(marked by less "minB" value), put it as the address of patient
+ex: 
+(((Dokter Utama))) --> in location gazeeters, there's area that named "Utama", so it's wrongly classified as address potential
+*********************************************/
+Rule: r0
+({page}):temp
+-->
+{
+    try{
+        AnnotationSet as = (AnnotationSet) bindings.get("temp");
+        AnnotationSet doctorMarkerAS = inputAS.get("address_marker", as.firstNode().getOffset(), as.lastNode().getOffset());
+        AnnotationSet doctorNameAS = inputAS.get("addressPotentialCleaned", as.firstNode().getOffset(), as.lastNode().getOffset());
+        
+        List<Annotation> markerOrdered = inDocumentOrder(doctorMarkerAS);
+        List<Annotation> nameOrdered = inDocumentOrder(doctorNameAS);
+        Iterator<Annotation> markerIterator = markerOrdered.iterator();
+        Iterator<Annotation> nameIterator = nameOrdered.iterator();
+
+        List myList = new ArrayList();
+        while(markerIterator.hasNext()){
+            Annotation markerAnn = markerIterator.next();
+            FeatureMap markerFeatures = markerAnn.getFeatures();
+            int MarkerMaxBottom = (int)markerFeatures.get("maxB");
+
+            int minBValue = 999999;
+            int counter = 0, argmin = 0;
+            while(nameIterator.hasNext()){
+                Annotation nameAnn = nameIterator.next();
+                FeatureMap nameFeatures = nameAnn.getFeatures();
+                int nameMaxBottom = (int)nameFeatures.get("maxB");
+
+                int diff = Math.abs(nameMaxBottom - MarkerMaxBottom);
+                
+                if(diff < minBValue){
+                    argmin = counter;
+                    minBValue = diff;
+                }
+                counter += 1;
+            }
+            if(minBValue < 100){
+                Annotation minBAnn = nameOrdered.get(argmin);
+                FeatureMap fm = Factory.newFeatureMap();
+                String value = (String)minBAnn.getFeatures().get("value");
+                fm.put("value", value);
+                outputAS.add(minBAnn.getStartNode(), minBAnn.getEndNode(), "Address_Patient", fm);
+            }
+        }
+    }
+    catch(Exception e){
+        System.out.println("================" + e);
+    }
+}
+
+
+
+Phase: Clean
+Input: address_potential addressPotentialCleaned Kalimat notAddress address_marker
+Options: control = all
+
+/*********************************************
+Cleaning the unnecessaryMarker
+*********************************************/
+Rule: CleanTempAnnotations
+(
+    {address_potential}|{Kalimat} |{addressPotentialCleaned}|{notAddress}|{address_marker}
+):temp
+-->
+{
+	gate.AnnotationSet temp = (gate.AnnotationSet) bindings.get("temp");
+	outputAS.removeAll(temp);
+}
